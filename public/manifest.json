@@ -1,0 +1,25 @@
+{
+  "name": "EcoQuest Carbon Tracker",
+  "short_name": "EcoQuest",
+  "description": "Carbon Footprint Awareness & Gamified Reduction Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#020617",
+  "theme_color": "#10b981",
+  "status_bar": "black-translucent",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

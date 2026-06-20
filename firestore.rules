@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidEmail() {
+      // In test mode we don’t enforce email verification.
+      // If you run in production, uncomment the line below.
+      // return request.auth.token.email_verified == true;
+      return true;
+    }
+    
+    function hasConsented() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.privacyConsent.accepted == true;
+    }
+    
+    function isValidFootprintInput(data) {
+      return data.inputs.transport.carKmPerDay is number
+          && data.inputs.transport.carKmPerDay >= 0
+          && data.inputs.transport.carKmPerDay <= 2000
+          && data.inputs.energy.electricityKwhPerMonth is number
+          && data.inputs.energy.electricityKwhPerMonth >= 0
+          && data.inputs.energy.electricityKwhPerMonth <= 50000;
+    }
+    
+    function isValidHabitLog(data) {
+      return data.bikeKm is number && data.bikeKm >= 0 && data.bikeKm <= 500
+          && data.publicTransportTrips is number && data.publicTransportTrips >= 0
+          && data.publicTransportTrips <= 50
+          && data.vegetarianMeals is number && data.vegetarianMeals >= 0
+          && data.vegetarianMeals <= 10
+          && data.plasticFreeDays is number && data.plasticFreeDays >= 0
+          && data.plasticFreeDays <= 1;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) && isValidEmail();
+      allow create: if isOwner(userId) 
+                    && isValidEmail()
+                    && request.resource.data.keys().hasAll(['email', 'createdAt', 'privacyConsent']);
+      allow update: if isOwner(userId) 
+                    && isValidEmail()
+                    // Prevent privilege escalation
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt']);
+      allow delete: if isOwner(userId); // GDPR/DPDP right to erasure
+      
+      // Footprints subcollection
+      match /footprints/{footprintId} {
+        allow read: if isOwner(userId) && isValidEmail();
+        allow create: if isOwner(userId) 
+                      && isValidEmail()
+                      && hasConsented()
+                      && isValidFootprintInput(request.resource.data);
+        allow update: if isOwner(userId) && isValidEmail()
+                      && isValidFootprintInput(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+      
+      // Habit logs subcollection
+      match /habits/{date} {
+        allow read: if isOwner(userId) && isValidEmail();
+        allow create, update: if isOwner(userId)
+                               && isValidEmail()
+                               && hasConsented()
+                               && isValidHabitLog(request.resource.data)
+                               // Prevent future backdating beyond 7 days
+                               && request.resource.data.loggedAt > request.time - duration.value(7, 'd');
+        allow delete: if isOwner(userId);
+      }
+      
+      // Challenge progress
+      match /challengeProgress/{challengeId} {
+        allow read: if isOwner(userId) && isValidEmail();
+        allow create, update: if isOwner(userId)
+                               && isValidEmail()
+                               && hasConsented()
+                               && request.resource.data.status in ['active', 'completed', 'failed'];
+        allow delete: if false; // Immutable challenge records
+      }
+    }
+    
+    // Challenges — public read, admin-only write
+    match /challenges/{challengeId} {
+      allow read: if isAuthenticated() && isValidEmail();
+      allow write: if false; // Admin SDK only via server-side
+    }
+    
+    // Leaderboards — public read, Cloud Function write only
+    match /leaderboards/{scope}/{period} {
+      allow read: if isAuthenticated() && isValidEmail();
+      allow write: if false; // Server-side aggregation only
+    }
+    
+    // Emission factors — public read
+    match /emissionFactors/{version} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // Reports — owner read, Cloud Function write
+    match /reports/{userId}/{reportId} {
+      allow read: if isOwner(userId) && isValidEmail();
+      allow write: if false; // Cloud Function only
+    }
+  }
+}
