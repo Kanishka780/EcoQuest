@@ -1,17 +1,53 @@
-import { NextRequest, NextResponse } from "next/server";
+/**
+ * @fileoverview API Route for AI Sustainability Coach.
+ *
+ * Implements rate limiting, prompt validation/sanitization, mock response fallback,
+ * and integration with Google Gemini Flash API for personalized coaching.
+ */
+
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { validateAiPrompt } from "@/lib/validation";
- 
-// Enforce server-side secret key protection
-const getGeminiApiKey = () => {
-  const key = process.env.GEMINI_API_KEY;
+
+/** Structure of a single reduction action recommended by the coach. */
+interface CoachRecommendation {
+  action: string;
+  co2SavedKgPerYear: number;
+  difficulty: "easy" | "medium" | "hard";
+  timeframe: string;
+  reason: string;
+}
+
+/** Full structured JSON response returned by the coaching route. */
+interface CoachResponse {
+  summary: string;
+  topSources: { category: string; percentage: number; insight: string }[];
+  recommendations: CoachRecommendation[];
+  motivationalMessage: string;
+  nextCheckIn: string;
+}
+
+/**
+ * Enforce server-side secret key protection.
+ *
+ * @returns The API key value or null if not set or default placeholder.
+ */
+const getGeminiApiKey = (): string | null => {
+  const key = process.env["GEMINI_API_KEY"];
   if (!key || key === "" || key.includes("your_")) {
     return null;
   }
   return key;
 };
- 
-export async function POST(req: NextRequest) {
+
+/**
+ * Handles sustainability coach queries from the dashboard client.
+ *
+ * @param req - The NextRequest object.
+ * @returns A Promise resolving to a NextResponse containing the coach results or an error.
+ */
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     // 1. IP-based rate limiting
     const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "127.0.0.1";
@@ -22,9 +58,9 @@ export async function POST(req: NextRequest) {
         { status: 429 }
       );
     }
- 
+
     const body = await req.json();
- 
+
     // 2. INPUT VALIDATION & SANITIZATION
     let prompt: string;
     try {
@@ -33,25 +69,12 @@ export async function POST(req: NextRequest) {
       const message = err instanceof Error ? err.message : "Invalid prompt";
       return NextResponse.json({ error: message }, { status: 400 });
     }
- 
+
     const apiKey = getGeminiApiKey();
- 
+
     // 3. MOCK MODE FALLBACK (If API key is missing)
     if (!apiKey) {
       const text = prompt.toLowerCase();
-      interface CoachResponse {
-        summary: string;
-        topSources: { category: string; percentage: number; insight: string }[];
-        recommendations: {
-          action: string;
-          co2SavedKgPerYear: number;
-          difficulty: string;
-          timeframe: string;
-          reason: string;
-        }[];
-        motivationalMessage: string;
-        nextCheckIn: string;
-      }
       const responseJson: CoachResponse = {
         summary: "I've reviewed your carbon profile details. Currently, your daily commuting habits represent your most addressable opportunity for savings.",
         topSources: [
@@ -76,7 +99,7 @@ export async function POST(req: NextRequest) {
         motivationalMessage: "Every small change accumulates. A single public transit trip saves more CO2 than an average tree absorbs in a month!",
         nextCheckIn: "Check back in next week after tracking your daily habits to view updated metrics."
       };
- 
+
       if (text.includes("diet") || text.includes("food") || text.includes("eat")) {
         responseJson.summary = "Looking at your culinary habits, meat meals represent a significant portion of your annual footprint.";
         responseJson.topSources = [{ category: "Diet & Food", percentage: 40, insight: "Meat-based meals, specifically beef, are extremely energy intensive to produce." }];
@@ -102,12 +125,12 @@ export async function POST(req: NextRequest) {
           }
         ];
       }
- 
+
       // Add a slight delay to simulate network call latency for authenticity
       await new Promise((resolve) => setTimeout(resolve, 800));
       return NextResponse.json(responseJson);
     }
- 
+
     // 4. PRODUCTION MODE (Call real Gemini API)
     const systemPrompt = `
       You are EcoQuest's AI Sustainability Coach. Analyze the user's prompt and return 
@@ -128,7 +151,7 @@ export async function POST(req: NextRequest) {
         "nextCheckIn": string
       }
     `;
- 
+
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
@@ -150,28 +173,28 @@ export async function POST(req: NextRequest) {
         }),
       }
     );
- 
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Gemini API Error:', errorText);
+      console.warn('Gemini API Error:', errorText);
       throw new Error('Failed to generate response from Gemini Coach.');
     }
- 
+
     const data = await response.json();
     const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!candidateText) {
       throw new Error('Empty response from Gemini API.');
     }
- 
+
     const coachAdvice = JSON.parse(candidateText.trim());
     return NextResponse.json(coachAdvice);
- 
+
   } catch (error: unknown) {
-    console.error('API Error in /api/ai/chat:', error);
-    const err = error as Error | null;
+    console.warn('API Error in /api/ai/chat:', error);
+    const message = error instanceof Error ? error.message : 'An error occurred during sustainability coaching generation.';
     return NextResponse.json(
-      { error: err?.message || 'An error occurred during sustainability coaching generation.' }, 
+      { error: message }, 
       { status: 500 }
     );
   }

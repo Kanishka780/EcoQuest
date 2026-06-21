@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit, purgeExpiredEntries } from "@/lib/rate-limit";
  
 describe("rateLimit", () => {
   beforeEach(() => {
@@ -50,5 +50,30 @@ describe("rateLimit", () => {
     const now = Date.now();
     const result = rateLimit(`ip-ts-${now}`, { windowMs: 5_000 });
     expect(result.resetAt).toBeGreaterThan(now);
+  });
+
+  describe("purgeExpiredEntries", () => {
+    it("removes entries whose window has expired", () => {
+      const id = `ip-purge-expired-${Date.now()}`;
+      rateLimit(id, { windowMs: 1_000 });
+
+      vi.advanceTimersByTime(1_001);
+      purgeExpiredEntries();
+
+      // After purge, this identifier should be treated as a brand new window
+      const result = rateLimit(id, { windowMs: 1_000, maxRequests: 5 });
+      expect(result.remaining).toBe(4);
+    });
+
+    it("keeps entries whose window has not expired", () => {
+      const id = `ip-purge-active-${Date.now()}`;
+      rateLimit(id, { windowMs: 60_000, maxRequests: 5 });
+
+      purgeExpiredEntries();
+
+      // Still within the same window, so count should continue from where it left off
+      const result = rateLimit(id, { windowMs: 60_000, maxRequests: 5 });
+      expect(result.remaining).toBe(3);
+    });
   });
 });

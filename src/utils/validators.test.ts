@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TransportInputSchema, GeminiCoachInputSchema } from './validators';
+import { TransportInputSchema, DietInputSchema, GeminiCoachInputSchema } from './validators';
 
 describe('Zod Validators', () => {
   
@@ -24,6 +24,28 @@ describe('Zod Validators', () => {
         flightsPerYear: 2,
         flightType: 'domestic',
         bikeOrWalkKmPerDay: 1
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('DietInputSchema', () => {
+    it('rejects beef meals exceeding total meat meals', () => {
+      const result = DietInputSchema.safeParse({
+        meatMealsPerWeek: 3,
+        beefMealsPerWeek: 5,
+        dairyServingsPerDay: 1,
+        foodWastePercent: 10
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts beef meals within total meat meals', () => {
+      const result = DietInputSchema.safeParse({
+        meatMealsPerWeek: 5,
+        beefMealsPerWeek: 2,
+        dairyServingsPerDay: 1,
+        foodWastePercent: 10
       });
       expect(result.success).toBe(true);
     });

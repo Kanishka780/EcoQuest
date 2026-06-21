@@ -1,5 +1,5 @@
 /**
- * Input validation and sanitization utilities for EcoQuest.
+ * @fileoverview Input validation and sanitization utilities for EcoQuest.
  * Used in API routes and form handlers to prevent injection attacks.
  */
  
@@ -37,40 +37,50 @@ export function validateNumber(
   return num;
 }
  
-/** Validate carbon footprint calculator input */
+/** Validated carbon footprint inputs. */
 export interface CarbonInputData {
-  transport: number;       // km/week
-  electricity: number;     // kWh/month
+  /** Weekly driving distance in kilometers. */
+  transport: number;
+  /** Monthly utility electricity consumption in kWh. */
+  electricity: number;
+  /** User's primary dietary categorization. */
   diet: "vegan" | "vegetarian" | "omnivore" | "heavy-meat";
-  flights: number;         // flights/year
+  /** Number of flights taken per year. */
+  flights: number;
+  /** Optional type of vehicle fuel used. */
   carType?: "electric" | "hybrid" | "petrol" | "diesel" | "none";
 }
  
+/** Helper type guard to check if an unknown value is a record. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 export function validateCarbonInput(raw: unknown): CarbonInputData {
-  if (typeof raw !== "object" || raw === null) {
+  if (!isRecord(raw)) {
     throw new ValidationError("Input must be an object");
   }
- 
-  const obj = raw as Record<string, unknown>;
- 
+
+  const obj = raw;
+
   const validDiets = ["vegan", "vegetarian", "omnivore", "heavy-meat"] as const;
   const validCarTypes = ["electric", "hybrid", "petrol", "diesel", "none"] as const;
- 
-  const diet = obj.diet as string;
+
+  const diet = obj["diet"] as string;
   if (!validDiets.includes(diet as (typeof validDiets)[number])) {
     throw new ValidationError(`Invalid diet type: ${diet}`);
   }
- 
-  const carType = obj.carType as string | undefined;
+
+  const carType = obj["carType"] as string | undefined;
   if (carType && !validCarTypes.includes(carType as (typeof validCarTypes)[number])) {
     throw new ValidationError(`Invalid car type: ${carType}`);
   }
- 
+
   return {
-    transport: validateNumber(obj.transport, { min: 0, max: 10_000 }),
-    electricity: validateNumber(obj.electricity, { min: 0, max: 100_000 }),
+    transport: validateNumber(obj["transport"], { min: 0, max: 10_000 }),
+    electricity: validateNumber(obj["electricity"], { min: 0, max: 100_000 }),
     diet: diet as CarbonInputData["diet"],
-    flights: validateNumber(obj.flights, { min: 0, max: 500 }),
+    flights: validateNumber(obj["flights"], { min: 0, max: 500 }),
     carType: carType as CarbonInputData["carType"],
   };
 }

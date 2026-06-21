@@ -14,6 +14,20 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
     }
   },
+  {
+    files: [
+      "src/app/api/ai/chat/**/*.ts",
+      "src/app/api/carbon/calculate/**/*.ts",
+      "src/lib/validation.ts",
+      "src/lib/carbon-calculator.ts"
+    ],
+    rules: {
+      "@typescript-eslint/explicit-function-return-type": ["warn", { "allowExpressions": true }],
+      "no-console": ["error", { "allow": ["warn"] }],
+      "@typescript-eslint/consistent-type-imports": "error",
+      "eqeqeq": ["error", "always"],
+    }
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

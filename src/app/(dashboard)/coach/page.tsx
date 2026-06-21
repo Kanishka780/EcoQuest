@@ -1,18 +1,33 @@
 'use client';
 
-import React, { useState } from 'react';
+/**
+ * @fileoverview AI Sustainability Coach page.
+ *
+ * Provides a chat interface to the rate-limited /api/ai/chat endpoint
+ * (backed by Google Gemini) and renders structured recommendation cards
+ * inline within the chat history.
+ *
+ * @module CoachPage
+ */
+
+import React, { useState, useRef, useCallback } from 'react';
 import { useUserStore } from '../../../stores/useUserStore';
 import { useFootprintStore } from '../../../stores/useFootprintStore';
 import { Send, Sparkles, AlertCircle, Award, Footprints, Zap, CheckCircle2 } from 'lucide-react';
 
+/** Difficulty level for an AI-recommended reduction action. */
+type Difficulty = 'easy' | 'medium' | 'hard';
+
+/** A single reduction recommendation returned by the AI coach. */
 interface Recommendation {
   action: string;
   co2SavedKgPerYear: number;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: Difficulty;
   timeframe: string;
   reason: string;
 }
 
+/** Full structured response from the /api/ai/chat endpoint. */
 interface CoachResponse {
   summary: string;
   topSources: { category: string; percentage: number; insight: string }[];
@@ -21,88 +36,139 @@ interface CoachResponse {
   nextCheckIn: string;
 }
 
-export default function CoachPage() {
-  const user = useUserStore(state => state.user);
-  const activeRecord = useFootprintStore(state => state.activeRecord);
-  
-  const [prompt, setPrompt] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/** A single entry in the visible chat history. */
+interface ChatEntry {
+  /** Stable unique ID used as the React list key. */
+  id: string;
+  sender: 'user' | 'coach';
+  text: string;
+  /** Present on coach entries that return structured data. */
+  data?: CoachResponse;
+}
 
-  const [chatHistory, setChatHistory] = useState<{ sender: 'user' | 'coach'; text: string; data?: CoachResponse }[]>([
+/** Quick-start suggestions shown before the first user message. */
+const SUGGESTIONS: readonly string[] = [
+  'How can I reduce my transportation emissions?',
+  'What are some low-carbon dietary swaps?',
+  'How does switching to solar energy affect my footprint?',
+  'What are quick shopping reductions I can make?',
+];
+
+/**
+ * Maps a difficulty level to its Tailwind colour classes.
+ *
+ * @param level - The difficulty level to map.
+ * @returns Tailwind class string for background and text colour.
+ */
+function difficultyClass(level: Difficulty): string {
+  const map: Record<Difficulty, string> = {
+    easy:   'text-emerald-500 bg-emerald-500/10',
+    medium: 'text-amber-500  bg-amber-500/10',
+    hard:   'text-red-500    bg-red-500/10',
+  };
+  return map[level];
+}
+
+/**
+ * AI Sustainability Coach — Gemini-powered chat interface.
+ *
+ * Renders incoming coach messages as structured recommendation cards when
+ * the API returns structured JSON, or as plain text for casual replies.
+ *
+ * @returns The coach page JSX element.
+ */
+export default function CoachPage() {
+  const user         = useUserStore(state => state.user);
+  const activeRecord  = useFootprintStore(state => state.activeRecord);
+
+  const [prompt,      setPrompt]      = useState('');
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+
+  /** Auto-incrementing counter for stable, unique chat entry IDs. */
+  const counterRef = useRef(0);
+
+  /** Returns a new unique entry ID. */
+  const nextId = useCallback((): string => {
+    counterRef.current += 1;
+    return `entry-${counterRef.current}`;
+  }, []);
+
+  const [chatHistory, setChatHistory] = useState<ChatEntry[]>(() => [
     {
+      id: 'entry-0',
       sender: 'coach',
-      text: "Hello! I am your EcoQuest Sustainability Coach. Send me a question about your carbon footprint, or ask for reduction strategies tailored specifically to your profile!"
-    }
+      text: 'Hello! I am your EcoQuest Sustainability Coach. Send me a question about your carbon footprint, or ask for reduction strategies tailored specifically to your profile!',
+    },
   ]);
 
-  const handleSend = async (e: React.FormEvent) => {
+  /**
+   * Submit the current prompt to the AI coach endpoint.
+   *
+   * @param e - The form submit event.
+   */
+  const handleSend = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || !user) {return;}
+    const trimmed = prompt.trim();
+    if (!trimmed || !user) { return; }
 
     setError(null);
     setLoading(true);
-    const userMessage = prompt;
     setPrompt('');
-    
-    // Add to chat list
-    setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }]);
+
+    setChatHistory(prev => [...prev, { id: nextId(), sender: 'user', text: trimmed }]);
 
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: userMessage,
-          userId: user.uid
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: trimmed, userId: user.uid }),
       });
 
-      const data = await res.json();
-      
+      const data: { error?: string } & Partial<CoachResponse> = await res.json();
+
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to fetch coach advice.');
+        throw new Error(data.error ?? 'Failed to fetch coach advice.');
       }
 
       setChatHistory(prev => [
-        ...prev, 
-        { 
-          sender: 'coach', 
-          text: data.summary,
-          data: data
-        }
+        ...prev,
+        {
+          id:     nextId(),
+          sender: 'coach',
+          text:   data.summary ?? 'Here are my thoughts…',
+          data:   data as CoachResponse,
+        },
       ]);
+
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Connection to Gemini Coach lost.';
-      setError(errorMsg);
+      const message = err instanceof Error ? err.message : 'Connection to Gemini Coach lost.';
+      setError(message);
       setChatHistory(prev => [
         ...prev,
-        { sender: 'coach', text: "Sorry, I encountered an error. Please try again." }
+        { id: nextId(), sender: 'coach', text: 'Sorry, I encountered an error. Please try again.' },
       ]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [prompt, user, nextId]);
 
-  const selectSuggestion = (text: string) => {
+  /**
+   * Pre-fill the input with a suggested question.
+   *
+   * @param text - The suggestion text to load into the prompt input.
+   */
+  const selectSuggestion = useCallback((text: string) => {
     setPrompt(text);
-  };
-
-  const suggestions = [
-    "How can I reduce my transportation emissions?",
-    "What are some low-carbon dietary swaps?",
-    "How does switching to solar energy affect my footprint?",
-    "What are quick shopping reductions I can make?"
-  ];
+  }, []);
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Title */}
+
+      {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 flex items-center space-x-2">
-          <Sparkles className="h-6 w-6 text-emerald-500 animate-float" />
+          <Sparkles className="h-6 w-6 text-emerald-500 animate-float" aria-hidden="true" />
           <span>AI Sustainability Coach</span>
         </h1>
         <p className="text-sm text-zinc-500">
@@ -111,69 +177,85 @@ export default function CoachPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        
-        {/* Chat Interface Column */}
-        <div className="lg:col-span-2 flex flex-col h-[70vh] glass-card bg-white dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800 overflow-hidden">
-          
-          {/* Active Record Indicator */}
-          <div className="p-3 border-b border-zinc-150 dark:border-zinc-850 bg-emerald-500/5 flex items-center justify-between text-xs">
+
+        {/* ── Chat column ─────────────────────────────────────────────── */}
+        <section
+          aria-label="Chat with AI sustainability coach"
+          className="lg:col-span-2 flex flex-col h-[70vh] glass-card bg-white dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800 overflow-hidden"
+        >
+          {/* Profile context strip */}
+          <div className="p-3 border-b border-zinc-100 dark:border-zinc-800 bg-emerald-500/5 flex items-center justify-between text-xs">
             <span className="flex items-center space-x-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
-              <Footprints className="h-4 w-4" />
+              <Footprints className="h-4 w-4" aria-hidden="true" />
               <span>Profile-Aware Context</span>
             </span>
             <span className="text-zinc-400">
-              {activeRecord 
-                ? `Footprint: ${activeRecord.results.annual} kg CO2e` 
-                : "No calculation profile linked"
-              }
+              {activeRecord
+                ? `Footprint: ${activeRecord.results.annual} kg CO₂e`
+                : 'No calculation profile linked'}
             </span>
           </div>
 
-          {/* Chat History Panel */}
-          <div className="flex-1 p-4 md:p-6 overflow-y-auto space-y-4">
-            {chatHistory.map((chat, idx) => {
+          {/* Chat log — role="log" tells screen readers to announce new entries */}
+          <div
+            role="log"
+            aria-live="polite"
+            aria-label="Chat history"
+            className="flex-1 p-4 md:p-6 overflow-y-auto space-y-4"
+          >
+            {chatHistory.map(chat => {
               const isCoach = chat.sender === 'coach';
               return (
-                <div key={idx} className={`flex ${isCoach ? 'justify-start' : 'justify-end'} animate-fade-in`}>
+                <div
+                  key={chat.id}
+                  className={`flex ${isCoach ? 'justify-start' : 'justify-end'} animate-fade-in`}
+                >
                   <div className={`max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed ${
-                    isCoach 
-                      ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-850 dark:text-zinc-200 border border-zinc-200/50 dark:border-zinc-800' 
+                    isCoach
+                      ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border border-zinc-200/50 dark:border-zinc-800'
                       : 'bg-emerald-600 text-white font-medium shadow-md shadow-emerald-950/10'
                   }`}>
                     {chat.text}
 
-                    {/* Render Structured Advice Cards inside the Chat Node if available */}
+                    {/* Structured recommendation cards */}
                     {isCoach && chat.data && (
                       <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
-                        
-                        {/* Recommendation List */}
                         <div className="space-y-3">
-                          <span className="text-[10px] font-bold text-emerald-500 dark:text-emerald-450 uppercase tracking-wider block">Recommended Actions</span>
+                          <span className="text-[10px] font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider block">
+                            Recommended Actions
+                          </span>
                           <div className="grid grid-cols-1 gap-2">
                             {chat.data.recommendations?.map((rec, rIdx) => (
-                              <div key={rIdx} className="p-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-850 rounded-xl space-y-1 shadow-sm">
+                              <div
+                                key={`${chat.id}-rec-${rIdx}`}
+                                className="p-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-1 shadow-sm"
+                              >
                                 <div className="flex items-start justify-between">
-                                  <span className="font-bold text-zinc-800 dark:text-zinc-250 text-xs">{rec.action}</span>
-                                  <span className="text-[9px] font-extrabold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded uppercase">{rec.difficulty}</span>
+                                  <span className="font-bold text-zinc-800 dark:text-zinc-200 text-xs">
+                                    {rec.action}
+                                  </span>
+                                  <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase ${difficultyClass(rec.difficulty)}`}>
+                                    {rec.difficulty}
+                                  </span>
                                 </div>
                                 <p className="text-[10px] text-zinc-400">{rec.reason}</p>
                                 <div className="flex items-center justify-between text-[9px] text-zinc-400 pt-1.5 border-t border-zinc-100 dark:border-zinc-900">
                                   <span>Timeframe: <strong>{rec.timeframe}</strong></span>
-                                  <span className="text-emerald-500 font-bold">-{rec.co2SavedKgPerYear} kg CO2/yr</span>
+                                  <span className="text-emerald-500 font-bold">
+                                    -{rec.co2SavedKgPerYear} kg CO₂/yr
+                                  </span>
                                 </div>
                               </div>
                             ))}
                           </div>
                         </div>
 
-                        {/* Motivational Alert */}
                         {chat.data.motivationalMessage && (
                           <div className="p-3 bg-emerald-500/5 rounded-xl border border-emerald-500/10 text-[11px] text-emerald-600 dark:text-emerald-400 flex items-start space-x-2">
-                            <CheckCircle2 className="h-4.5 w-4.5 shrink-0 mt-0.5" />
+                            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
                             <span>{chat.data.motivationalMessage}</span>
                           </div>
                         )}
-
                       </div>
                     )}
                   </div>
@@ -183,35 +265,41 @@ export default function CoachPage() {
 
             {loading && (
               <div className="flex justify-start">
-                <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-xs font-semibold text-zinc-400 flex items-center space-x-2">
-                  <div className="flex space-x-1">
-                    <span className="h-2 w-2 bg-emerald-500 rounded-full animate-bounce"></span>
-                    <span className="h-2 w-2 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-                    <span className="h-2 w-2 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                <div
+                  role="status"
+                  aria-label="Coach is generating a response"
+                  className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-xs font-semibold text-zinc-400 flex items-center space-x-2"
+                >
+                  <div className="flex space-x-1" aria-hidden="true">
+                    <span className="h-2 w-2 bg-emerald-500 rounded-full animate-bounce" />
+                    <span className="h-2 w-2 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.2s]" />
+                    <span className="h-2 w-2 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.4s]" />
                   </div>
-                  <span>Gemini is generating personalized recommendations...</span>
+                  <span>Gemini is generating personalised recommendations…</span>
                 </div>
               </div>
             )}
 
             {error && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-450 rounded-xl text-xs flex items-center space-x-2">
-                <AlertCircle className="h-4.5 w-4.5" />
+              <div role="alert" className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-xl text-xs flex items-center space-x-2">
+                <AlertCircle className="h-4 w-4" aria-hidden="true" />
                 <span>{error}</span>
               </div>
             )}
           </div>
 
-          {/* Suggestions Tray */}
+          {/* Quick-start suggestions */}
           {chatHistory.length <= 1 && (
-            <div className="p-4 border-t border-zinc-150 dark:border-zinc-850 bg-zinc-50 dark:bg-zinc-900/30">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-2">Suggested Questions</span>
+            <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-2">
+                Suggested Questions
+              </span>
               <div className="flex flex-wrap gap-2">
-                {suggestions.map((sug, idx) => (
+                {SUGGESTIONS.map(sug => (
                   <button
-                    key={idx}
+                    key={sug}
                     onClick={() => selectSuggestion(sug)}
-                    className="text-[11px] text-zinc-650 dark:text-zinc-350 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500 hover:text-emerald-500 dark:hover:border-emerald-550 px-3 py-1.5 rounded-full transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="text-[11px] text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500 hover:text-emerald-500 px-3 py-1.5 rounded-full transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   >
                     {sug}
                   </button>
@@ -220,52 +308,54 @@ export default function CoachPage() {
             </div>
           )}
 
-          {/* Form input bar */}
-          <form onSubmit={handleSend} className="p-4 border-t border-zinc-150 dark:border-zinc-850 bg-zinc-50 dark:bg-zinc-950/40 flex items-center space-x-2.5">
+          {/* Prompt input */}
+          <form
+            onSubmit={handleSend}
+            className="p-4 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 flex items-center space-x-2.5"
+          >
+            <label htmlFor="coach-prompt" className="sr-only">
+              Ask the sustainability coach
+            </label>
             <input
+              id="coach-prompt"
               type="text"
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              className="flex-1 px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-zinc-800 dark:text-zinc-100"
-              placeholder="Ask for customized saving plans..."
-              aria-label="Coach prompt query"
+              onChange={e => setPrompt(e.target.value)}
+              placeholder="Ask for customised saving plans…"
               disabled={loading}
+              className="flex-1 px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-zinc-800 dark:text-zinc-100"
             />
             <button
               type="submit"
               disabled={loading || !prompt.trim()}
+              aria-label="Send message to coach"
               className="p-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-40"
-              aria-label="Submit coach prompt query"
             >
-              <Send className="h-4.5 w-4.5" />
+              <Send className="h-4 w-4" aria-hidden="true" />
             </button>
           </form>
+        </section>
 
-        </div>
-
-        {/* Sidebar recommendations stats */}
+        {/* ── Sidebar ──────────────────────────────────────────────────── */}
         <div className="space-y-6">
           <div className="glass-card bg-emerald-950/20 dark:bg-emerald-950/10 border-emerald-500/20 p-6 text-center space-y-4">
             <div className="inline-flex p-2.5 bg-emerald-500/10 text-emerald-400 rounded-2xl border border-emerald-500/20">
-              <Award className="h-6 w-6" />
+              <Award className="h-6 w-6" aria-hidden="true" />
             </div>
-            
             <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Coach Rating</h3>
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Coach Rating</h2>
               <div className="text-2xl font-extrabold text-white mt-1">Sustainability Rank</div>
-              <p className="text-xs text-emerald-400 font-bold mt-1">
-                Active reductions roadmap linked
-              </p>
+              <p className="text-xs text-emerald-400 font-bold mt-1">Active reductions roadmap linked</p>
             </div>
           </div>
 
           <div className="bg-zinc-100 dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">
             <h3 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center space-x-2">
-              <Zap className="h-4.5 w-4.5 text-amber-505" />
+              <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
               <span>Prompting Guideline</span>
             </h3>
-            <p className="text-xs text-zinc-550 leading-relaxed">
-              When querying the coach, refer directly to specific utilities or commute issues. E.g., &quot;I travel 20km by diesel car, what public transit swaps exist in India?&quot; or &quot;How does beef compared to other meats?&quot;.
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Refer to specific utilities or commute issues. E.g., &quot;I travel 20 km by diesel car, what public transit swaps exist in India?&quot; or &quot;How does beef compare to other meats?&quot;
             </p>
           </div>
         </div>

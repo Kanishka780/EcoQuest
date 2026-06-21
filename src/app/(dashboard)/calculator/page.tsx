@@ -1,85 +1,126 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+/**
+ * @fileoverview Multi-step Carbon Calculator page.
+ *
+ * Collects transport, energy, diet and shopping data via a tabbed form,
+ * shows real-time CO₂e estimates, and persists results to Firestore.
+ *
+ * @module CalculatorPage
+ */
+
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useForm, FormProvider, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import type { z } from 'zod';
 import { useUserStore } from '../../../stores/useUserStore';
 import { useFootprintStore } from '../../../stores/useFootprintStore';
 import { FullCalculatorSchema } from '../../../utils/validators';
 import { calculateAnnualFootprint } from '../../../features/calculator/utils/calculations';
 import { LiveRegion } from '../../../components/shared/LiveRegion';
 import { FootprintInputs } from '../../../types/footprint.types';
-import { 
-  Car, Lightbulb, Utensils, ShoppingBag, Info, 
-  Calculator, ChevronRight, ChevronLeft, Save
+import {
+  Car, Lightbulb, Utensils, ShoppingBag, Info,
+  Calculator, ChevronRight, ChevronLeft, Save,
 } from 'lucide-react';
 
-const formSections = [
-  { id: 'transport', label: 'Transit', icon: Car },
-  { id: 'energy', label: 'Utilities', icon: Lightbulb },
-  { id: 'diet', label: 'Diet', icon: Utensils },
-  { id: 'shopping', label: 'Consumption', icon: ShoppingBag },
+/** Duration before the success message auto-dismisses (ms). */
+const SUCCESS_DISMISS_MS = 5_000;
+
+const FORM_SECTIONS = [
+  { id: 'transport', label: 'Transit',     icon: Car },
+  { id: 'energy',    label: 'Utilities',   icon: Lightbulb },
+  { id: 'diet',      label: 'Diet',        icon: Utensils },
+  { id: 'shopping',  label: 'Consumption', icon: ShoppingBag },
 ] as const;
 
+type SectionId = (typeof FORM_SECTIONS)[number]['id'];
+
+/** Baseline input values shown when no saved record exists. */
+const DEFAULT_INPUTS: FootprintInputs = {
+  transport: {
+    carKmPerDay: 15,
+    carFuelType: 'petrol',
+    publicTransportKmPerDay: 10,
+    flightsPerYear: 1,
+    flightType: 'domestic',
+    bikeOrWalkKmPerDay: 2,
+  },
+  energy: {
+    electricityKwhPerMonth: 200,
+    electricitySource: 'grid',
+    naturalGasUnitsPerMonth: 0,
+    coalUsageKgPerMonth: 0,
+    householdSize: 2,
+  },
+  diet: {
+    meatMealsPerWeek: 7,
+    beefMealsPerWeek: 1,
+    dairyServingsPerDay: 2,
+    foodWastePercent: 20,
+  },
+  shopping: {
+    clothingItemsPerMonth: 2,
+    electronicsPerYear: 1,
+    onlineOrdersPerWeek: 2,
+  },
+};
+
+/** Shared Tailwind classes for all form inputs. */
+const INPUT_CLS =
+  'block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500';
+
+/**
+ * Multi-step carbon footprint calculator.
+ *
+ * Provides real-time CO₂e estimates as the user fills in each section and
+ * persists the final result to the authenticated user's Firestore profile.
+ *
+ * @returns The calculator page JSX element.
+ */
 export default function CalculatorPage() {
-  const user = useUserStore(state => state.user);
+  const user         = useUserStore(state => state.user);
   const saveFootprint = useFootprintStore(state => state.saveRecord);
-  const activeRecord = useFootprintStore(state => state.activeRecord);
-  
-  const [activeTab, setActiveTab] = useState<'transport' | 'energy' | 'diet' | 'shopping'>('transport');
+  const activeRecord  = useFootprintStore(state => state.activeRecord);
+
+  const [activeTab,   setActiveTab]   = useState<SectionId>('transport');
   const [announcement, setAnnouncement] = useState('');
-  const [saveLoading, setSaveLoading] = useState(false);
-  const [successMsg, setSuccessMsg] = useState('');
+  const [saveLoading,  setSaveLoading]  = useState(false);
+  const [successMsg,   setSuccessMsg]   = useState('');
+  const [saveError,    setSaveError]    = useState('');
 
-  // Default values from activeRecord or defaults
-  const defaultValues = useMemo<FootprintInputs>(() => {
-    if (activeRecord) {return activeRecord.inputs;}
-    return {
-      transport: {
-        carKmPerDay: 15,
-        carFuelType: 'petrol',
-        publicTransportKmPerDay: 10,
-        flightsPerYear: 1,
-        flightType: 'domestic',
-        bikeOrWalkKmPerDay: 2,
-      },
-      energy: {
-        electricityKwhPerMonth: 200,
-        electricitySource: 'grid',
-        naturalGasUnitsPerMonth: 0,
-        coalUsageKgPerMonth: 0,
-        householdSize: 2,
-      },
-      diet: {
-        meatMealsPerWeek: 7,
-        beefMealsPerWeek: 1,
-        dairyServingsPerDay: 2,
-        foodWastePercent: 20,
-      },
-      shopping: {
-        clothingItemsPerMonth: 2,
-        electronicsPerYear: 1,
-        onlineOrdersPerWeek: 2,
-      },
+  /** Timer ref so we can clear the auto-dismiss on unmount. */
+  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (dismissTimer.current !== null) {
+        clearTimeout(dismissTimer.current);
+      }
     };
-  }, [activeRecord]);
+  }, []);
 
-  const methods = useForm<FootprintInputs>({
-    resolver: zodResolver(FullCalculatorSchema) as unknown as import('react-hook-form').Resolver<FootprintInputs>,
+  const defaultValues = useMemo<FootprintInputs>(
+    () => activeRecord?.inputs ?? DEFAULT_INPUTS,
+    [activeRecord],
+  );
+
+  type CalculatorFormInput = z.input<typeof FullCalculatorSchema>;
+
+  const methods = useForm<CalculatorFormInput, unknown, FootprintInputs>({
+    resolver: zodResolver(FullCalculatorSchema),
     defaultValues,
     mode: 'onChange',
   });
 
   const { handleSubmit, reset, formState: { errors, isValid } } = methods;
-  
-  // Reset values when active record changes
+
   useEffect(() => {
     if (activeRecord) {
       reset(activeRecord.inputs);
     }
   }, [activeRecord, reset]);
 
-  // Watch inputs for real-time calculations
   const watchedInputs = useWatch({ control: methods.control });
 
   const realTimeResults = useMemo(() => {
@@ -90,45 +131,61 @@ export default function CalculatorPage() {
     }
   }, [watchedInputs]);
 
-  // Handle Form Submission / Database saving
-  const onSubmit = async (data: FootprintInputs) => {
-    if (!user) {return;}
+  /** Move to the next form section. */
+  const nextTab = useCallback(() => {
+    const idx = FORM_SECTIONS.findIndex(s => s.id === activeTab);
+    if (idx < FORM_SECTIONS.length - 1) {
+      setActiveTab(FORM_SECTIONS[idx + 1].id);
+    }
+  }, [activeTab]);
+
+  /** Move to the previous form section. */
+  const prevTab = useCallback(() => {
+    const idx = FORM_SECTIONS.findIndex(s => s.id === activeTab);
+    if (idx > 0) {
+      setActiveTab(FORM_SECTIONS[idx - 1].id);
+    }
+  }, [activeTab]);
+
+  /**
+   * Handle form submission.
+   * Calculates the footprint from validated inputs and saves it to Firestore.
+   *
+   * @param data - Validated form values.
+   */
+  const onSubmit = useCallback(async (data: FootprintInputs) => {
+    if (!user) { return; }
+
     setSaveLoading(true);
     setSuccessMsg('');
+    setSaveError('');
+
     try {
       const results = calculateAnnualFootprint(data);
       await saveFootprint(user.uid, data, results);
-      
-      const message = `Carbon calculation saved. Your annual footprint is estimated at ${results.annual} kg CO2 equivalent.`;
-      setAnnouncement(message);
+
+      const msg = `Carbon calculation saved. Your annual footprint is estimated at ${results.annual} kg CO₂ equivalent.`;
+      setAnnouncement(msg);
       setSuccessMsg('Calculation saved successfully to your profile!');
-      
-      // Auto-hide success message
-      setTimeout(() => setSuccessMsg(''), 5000);
-    } catch (err) {
-      console.error(err);
+
+      if (dismissTimer.current !== null) {
+        clearTimeout(dismissTimer.current);
+      }
+      dismissTimer.current = setTimeout(() => {
+        setSuccessMsg('');
+        dismissTimer.current = null;
+      }, SUCCESS_DISMISS_MS);
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to save. Please try again.';
+      setSaveError(message);
     } finally {
       setSaveLoading(false);
     }
-  };
-
-  const nextTab = () => {
-    const currentIndex = formSections.findIndex(s => s.id === activeTab);
-    if (currentIndex < formSections.length - 1) {
-      setActiveTab(formSections[currentIndex + 1].id);
-    }
-  };
-
-  const prevTab = () => {
-    const currentIndex = formSections.findIndex(s => s.id === activeTab);
-    if (currentIndex > 0) {
-      setActiveTab(formSections[currentIndex - 1].id);
-    }
-  };
+  }, [user, saveFootprint]);
 
   return (
     <div className="space-y-6">
-      {/* Title */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -144,65 +201,80 @@ export default function CalculatorPage() {
 
       <FormProvider {...methods}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          
-          {/* Form Side */}
+
+          {/* ── Form column ─────────────────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-6">
-            
-            {/* Step Selector Tab Bar */}
-            <div className="flex bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-1.5 rounded-2xl">
-              {formSections.map((section) => {
-                const TabIcon = section.icon;
+
+            {/* Tab bar */}
+            <div
+              role="tablist"
+              aria-label="Calculator sections"
+              className="flex bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-1.5 rounded-2xl"
+            >
+              {FORM_SECTIONS.map(section => {
+                const TabIcon   = section.icon;
                 const isSelected = activeTab === section.id;
                 return (
                   <button
                     key={section.id}
+                    role="tab"
+                    id={`tab-${section.id}`}
+                    aria-selected={isSelected}
+                    aria-controls={`tabpanel-${section.id}`}
                     onClick={() => setActiveTab(section.id)}
                     className={`flex-1 flex flex-col sm:flex-row items-center justify-center space-y-1 sm:space-y-0 sm:space-x-2 py-2.5 rounded-xl text-xs font-semibold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
-                      isSelected 
-                        ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-sm' 
+                      isSelected
+                        ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
                     }`}
-                    aria-selected={isSelected}
-                    role="tab"
                   >
-                    <TabIcon className="h-4.5 w-4.5" />
+                    <TabIcon className="h-4 w-4" aria-hidden="true" />
                     <span>{section.label}</span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Stepped Fields Card */}
-            <div className="glass-card bg-white dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800 p-6 md:p-8">
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                
-                {/* 1. TRANSPORT FIELDSET */}
+            {/* Active tab panel */}
+            <div
+              role="tabpanel"
+              id={`tabpanel-${activeTab}`}
+              aria-labelledby={`tab-${activeTab}`}
+              className="glass-card bg-white dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800 p-6 md:p-8"
+            >
+              {/* eslint-disable-next-line react-hooks/refs */}
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
+
+                {/* 1 · Transport */}
                 {activeTab === 'transport' && (
                   <fieldset className="space-y-5">
-                    <legend className="text-md font-bold text-zinc-800 dark:text-zinc-100 mb-2">Daily Transportation & Travel</legend>
-                    
+                    <legend className="text-md font-bold text-zinc-800 dark:text-zinc-100 mb-2">
+                      Daily Transportation &amp; Travel
+                    </legend>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Car commute */}
                       <div className="space-y-1.5">
-                        <label htmlFor="carKm" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Daily Car Distance (km/day)</label>
+                        <label htmlFor="carKm" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Daily Car Distance (km/day)
+                        </label>
                         <input
                           id="carKm"
                           type="number"
                           step="any"
+                          aria-describedby={errors.transport?.carKmPerDay ? 'carKm-err' : undefined}
                           {...methods.register('transport.carKmPerDay')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                          className={INPUT_CLS}
                         />
-                        {errors.transport?.carKmPerDay && <p className="text-[10px] text-red-500">{errors.transport.carKmPerDay.message}</p>}
+                        {errors.transport?.carKmPerDay && (
+                          <p id="carKm-err" role="alert" className="text-[10px] text-red-500">
+                            {errors.transport.carKmPerDay.message}
+                          </p>
+                        )}
                       </div>
-                      
-                      {/* Car fuel type */}
                       <div className="space-y-1.5">
-                        <label htmlFor="fuelType" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Car Fuel Type</label>
-                        <select
-                          id="fuelType"
-                          {...methods.register('transport.carFuelType')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                        >
+                        <label htmlFor="fuelType" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Car Fuel Type
+                        </label>
+                        <select id="fuelType" {...methods.register('transport.carFuelType')} className={INPUT_CLS}>
                           <option value="none">No Car / Do not drive</option>
                           <option value="petrol">Petrol</option>
                           <option value="diesel">Diesel</option>
@@ -211,54 +283,35 @@ export default function CalculatorPage() {
                         </select>
                       </div>
                     </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Public transit */}
                       <div className="space-y-1.5">
-                        <label htmlFor="transitKm" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Public Transport (km/day)</label>
-                        <input
-                          id="transitKm"
-                          type="number"
-                          {...methods.register('transport.publicTransportKmPerDay')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="transitKm" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Public Transport (km/day)
+                        </label>
+                        <input id="transitKm" type="number" {...methods.register('transport.publicTransportKmPerDay')} className={INPUT_CLS} />
                       </div>
-                      
-                      {/* Active transit (walking / biking) */}
                       <div className="space-y-1.5">
-                        <label htmlFor="activeKm" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Bicycle / Walk (km/day)</label>
-                        <input
-                          id="activeKm"
-                          type="number"
-                          {...methods.register('transport.bikeOrWalkKmPerDay')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="activeKm" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Bicycle / Walk (km/day)
+                        </label>
+                        <input id="activeKm" type="number" {...methods.register('transport.bikeOrWalkKmPerDay')} className={INPUT_CLS} />
                       </div>
                     </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-zinc-100 dark:border-zinc-900 pt-4">
-                      {/* Flight frequency */}
                       <div className="space-y-1.5">
-                        <label htmlFor="flights" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Flights taken per year</label>
-                        <input
-                          id="flights"
-                          type="number"
-                          {...methods.register('transport.flightsPerYear')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="flights" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Flights taken per year
+                        </label>
+                        <input id="flights" type="number" {...methods.register('transport.flightsPerYear')} className={INPUT_CLS} />
                       </div>
-                      
-                      {/* Flight distance type */}
                       <div className="space-y-1.5">
-                        <label htmlFor="flightType" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Typical Flight Type</label>
-                        <select
-                          id="flightType"
-                          {...methods.register('transport.flightType')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        >
-                          <option value="domestic">Domestic Flight (~800km)</option>
-                          <option value="shortHaul">Short-haul International (~2000km)</option>
-                          <option value="longHaul">Long-haul International (~6000km)</option>
+                        <label htmlFor="flightType" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Typical Flight Type
+                        </label>
+                        <select id="flightType" {...methods.register('transport.flightType')} className={INPUT_CLS}>
+                          <option value="domestic">Domestic Flight (~800 km)</option>
+                          <option value="shortHaul">Short-haul International (~2 000 km)</option>
+                          <option value="longHaul">Long-haul International (~6 000 km)</option>
                           <option value="mixed">Mixed Types</option>
                         </select>
                       </div>
@@ -266,174 +319,144 @@ export default function CalculatorPage() {
                   </fieldset>
                 )}
 
-                {/* 2. ENERGY FIELDSET */}
+                {/* 2 · Energy */}
                 {activeTab === 'energy' && (
                   <fieldset className="space-y-5">
-                    <legend className="text-md font-bold text-zinc-800 dark:text-zinc-100 mb-2">Household Utility Consumption</legend>
-                    
+                    <legend className="text-md font-bold text-zinc-800 dark:text-zinc-100 mb-2">
+                      Household Utility Consumption
+                    </legend>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Electricity usage */}
                       <div className="space-y-1.5">
-                        <label htmlFor="electricity" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Monthly Electricity (kWh/month)</label>
-                        <input
-                          id="electricity"
-                          type="number"
-                          {...methods.register('energy.electricityKwhPerMonth')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="electricity" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Monthly Electricity (kWh/month)
+                        </label>
+                        <input id="electricity" type="number" {...methods.register('energy.electricityKwhPerMonth')} className={INPUT_CLS} />
                       </div>
-                      
-                      {/* Electricity Source */}
                       <div className="space-y-1.5">
-                        <label htmlFor="elecSource" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Electricity Source</label>
-                        <select
-                          id="elecSource"
-                          {...methods.register('energy.electricitySource')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        >
+                        <label htmlFor="elecSource" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Electricity Source
+                        </label>
+                        <select id="elecSource" {...methods.register('energy.electricitySource')} className={INPUT_CLS}>
                           <option value="grid">Standard Power Grid (Highly Fossil)</option>
                           <option value="solar">Solar Energy (Net-Zero Direct)</option>
                           <option value="wind">Wind Energy</option>
-                          <option value="mixed">Mixed/Green Electricity Plan</option>
+                          <option value="mixed">Mixed / Green Electricity Plan</option>
                         </select>
                       </div>
                     </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Household size */}
                       <div className="space-y-1.5">
-                        <label htmlFor="hhSize" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Household Size (Shared factor)</label>
+                        <label htmlFor="hhSize" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Household Size
+                        </label>
                         <input
                           id="hhSize"
                           type="number"
+                          aria-describedby="hhSize-hint"
                           {...methods.register('energy.householdSize')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
+                          className={INPUT_CLS}
                         />
-                        <span className="text-[10px] text-zinc-400">Emissions are divided by household members</span>
+                        <span id="hhSize-hint" className="text-[10px] text-zinc-400">
+                          Emissions are divided by household members
+                        </span>
                       </div>
-
-                      {/* Natural gas */}
                       <div className="space-y-1.5">
-                        <label htmlFor="gas" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Natural Gas Usage (m³ or units/month)</label>
-                        <input
-                          id="gas"
-                          type="number"
-                          {...methods.register('energy.naturalGasUnitsPerMonth')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="gas" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Natural Gas Usage (m³/month)
+                        </label>
+                        <input id="gas" type="number" {...methods.register('energy.naturalGasUnitsPerMonth')} className={INPUT_CLS} />
                       </div>
                     </div>
                   </fieldset>
                 )}
 
-                {/* 3. DIET FIELDSET */}
+                {/* 3 · Diet */}
                 {activeTab === 'diet' && (
                   <fieldset className="space-y-5">
-                    <legend className="text-md font-bold text-zinc-800 dark:text-zinc-100 mb-2">Dietary Habits & Food Waste</legend>
-                    
+                    <legend className="text-md font-bold text-zinc-800 dark:text-zinc-100 mb-2">
+                      Dietary Habits &amp; Food Waste
+                    </legend>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Meat meals */}
                       <div className="space-y-1.5">
-                        <label htmlFor="meatMeals" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Meat Meals per week (Max 21)</label>
-                        <input
-                          id="meatMeals"
-                          type="number"
-                          {...methods.register('diet.meatMealsPerWeek')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="meatMeals" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Meat Meals per week (max 21)
+                        </label>
+                        <input id="meatMeals" type="number" {...methods.register('diet.meatMealsPerWeek')} className={INPUT_CLS} />
                       </div>
-
-                      {/* Beef meals */}
                       <div className="space-y-1.5">
-                        <label htmlFor="beefMeals" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Beef Meals per week (Included in meat meals)</label>
+                        <label htmlFor="beefMeals" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Beef Meals per week
+                        </label>
                         <input
                           id="beefMeals"
                           type="number"
+                          aria-describedby={errors.diet?.beefMealsPerWeek ? 'beefMeals-err' : undefined}
                           {...methods.register('diet.beefMealsPerWeek')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
+                          className={INPUT_CLS}
                         />
-                        {errors.diet?.beefMealsPerWeek && <p className="text-[10px] text-red-500">{errors.diet.beefMealsPerWeek.message}</p>}
+                        {errors.diet?.beefMealsPerWeek && (
+                          <p id="beefMeals-err" role="alert" className="text-[10px] text-red-500">
+                            {errors.diet.beefMealsPerWeek.message}
+                          </p>
+                        )}
                       </div>
                     </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Dairy Servings */}
                       <div className="space-y-1.5">
-                        <label htmlFor="dairy" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Dairy servings (milk/cheese) per day</label>
-                        <input
-                          id="dairy"
-                          type="number"
-                          step="0.5"
-                          {...methods.register('diet.dairyServingsPerDay')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="dairy" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Dairy servings per day
+                        </label>
+                        <input id="dairy" type="number" step="0.5" {...methods.register('diet.dairyServingsPerDay')} className={INPUT_CLS} />
                       </div>
-
-                      {/* Food waste */}
                       <div className="space-y-1.5">
-                        <label htmlFor="waste" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Est. Food Waste (%)</label>
-                        <input
-                          id="waste"
-                          type="number"
-                          {...methods.register('diet.foodWastePercent')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="waste" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          Est. Food Waste (%)
+                        </label>
+                        <input id="waste" type="number" {...methods.register('diet.foodWastePercent')} className={INPUT_CLS} />
                       </div>
                     </div>
                   </fieldset>
                 )}
 
-                {/* 4. SHOPPING FIELDSET */}
+                {/* 4 · Shopping */}
                 {activeTab === 'shopping' && (
                   <fieldset className="space-y-5">
-                    <legend className="text-md font-bold text-zinc-800 dark:text-zinc-100 mb-2">Purchasing & Daily Consumption</legend>
-                    
+                    <legend className="text-md font-bold text-zinc-800 dark:text-zinc-100 mb-2">
+                      Purchasing &amp; Daily Consumption
+                    </legend>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      {/* Clothing */}
                       <div className="space-y-1.5">
-                        <label htmlFor="clothing" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">New clothing / month</label>
-                        <input
-                          id="clothing"
-                          type="number"
-                          {...methods.register('shopping.clothingItemsPerMonth')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="clothing" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          New clothing / month
+                        </label>
+                        <input id="clothing" type="number" {...methods.register('shopping.clothingItemsPerMonth')} className={INPUT_CLS} />
                       </div>
-
-                      {/* Electronics */}
                       <div className="space-y-1.5">
-                        <label htmlFor="electronics" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">New gadgets / year</label>
-                        <input
-                          id="electronics"
-                          type="number"
-                          {...methods.register('shopping.electronicsPerYear')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="electronics" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          New gadgets / year
+                        </label>
+                        <input id="electronics" type="number" {...methods.register('shopping.electronicsPerYear')} className={INPUT_CLS} />
                       </div>
-
-                      {/* Online orders */}
                       <div className="space-y-1.5">
-                        <label htmlFor="orders" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">E-Commerce orders / week</label>
-                        <input
-                          id="orders"
-                          type="number"
-                          {...methods.register('shopping.onlineOrdersPerWeek')}
-                          className="block w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none"
-                        />
+                        <label htmlFor="orders" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          E-Commerce orders / week
+                        </label>
+                        <input id="orders" type="number" {...methods.register('shopping.onlineOrdersPerWeek')} className={INPUT_CLS} />
                       </div>
                     </div>
                   </fieldset>
                 )}
 
-                {/* Nav buttons inside form card */}
-                <div className="flex items-center justify-between border-t border-zinc-150 dark:border-zinc-850 pt-6">
+                {/* Navigation buttons */}
+                <div className="flex items-center justify-between border-t border-zinc-100 dark:border-zinc-900 pt-6">
                   <button
                     type="button"
                     onClick={prevTab}
                     disabled={activeTab === 'transport'}
-                    className="flex items-center space-x-1.5 px-4 py-2 border border-zinc-250 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-semibold text-xs disabled:opacity-40 focus:outline-none"
+                    aria-label="Go to previous section"
+                    className="flex items-center space-x-1.5 px-4 py-2 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-semibold text-xs disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                     <span>Back</span>
                   </button>
 
@@ -441,26 +464,32 @@ export default function CalculatorPage() {
                     <button
                       type="button"
                       onClick={nextTab}
-                      className="flex items-center space-x-1.5 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-white rounded-xl font-semibold text-xs focus:outline-none"
+                      aria-label="Go to next section"
+                      className="flex items-center space-x-1.5 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-semibold text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     >
-                      <span>Next Tab</span>
-                      <ChevronRight className="h-4 w-4" />
+                      <span>Next</span>
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
                     </button>
                   ) : (
                     <button
                       type="submit"
                       disabled={saveLoading || !isValid}
-                      className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold text-xs disabled:opacity-50 focus:outline-none shadow-md shadow-emerald-950/20"
+                      className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold text-xs disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-md"
                     >
-                      <Save className="h-4 w-4" />
-                      <span>{saveLoading ? 'Saving...' : 'Save Footprint'}</span>
+                      <Save className="h-4 w-4" aria-hidden="true" />
+                      <span>{saveLoading ? 'Saving…' : 'Save Footprint'}</span>
                     </button>
                   )}
                 </div>
 
                 {successMsg && (
-                  <p className="text-center text-xs font-semibold text-emerald-600 dark:text-emerald-450 animate-pulse bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20">
+                  <p role="status" aria-live="polite" className="text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20">
                     {successMsg}
+                  </p>
+                )}
+                {saveError && (
+                  <p role="alert" className="text-center text-xs font-semibold text-red-600 bg-red-500/10 p-2.5 rounded-lg border border-red-500/20">
+                    {saveError}
                   </p>
                 )}
               </form>

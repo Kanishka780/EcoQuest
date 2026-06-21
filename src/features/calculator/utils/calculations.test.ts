@@ -63,6 +63,63 @@ describe('Carbon Calculator Calculations', () => {
       // Energy should be 1/4 of single person's energy since shared
       expect(family.breakdown.energy).toBeCloseTo(single.breakdown.energy / 4, 1);
     });
+
+    it.each([
+      ['electric', 'hybrid'],
+      ['electric', 'diesel'],
+      ['hybrid', 'diesel'],
+      ['none', 'petrol'],
+    ] as const)('produces lower transport emissions for %s than %s at the same distance', (cleaner, dirtier) => {
+      const cleanerResult = calculateAnnualFootprint({
+        ...baseInputs,
+        transport: { ...baseInputs.transport, carFuelType: cleaner }
+      });
+      const dirtierResult = calculateAnnualFootprint({
+        ...baseInputs,
+        transport: { ...baseInputs.transport, carFuelType: dirtier }
+      });
+      expect(cleanerResult.breakdown.transport).toBeLessThanOrEqual(dirtierResult.breakdown.transport);
+    });
+
+    it.each(['domestic', 'shortHaul', 'longHaul', 'mixed'] as const)(
+      'calculates flight emissions for %s flights',
+      (flightType) => {
+        const result = calculateAnnualFootprint({
+          ...baseInputs,
+          transport: { ...baseInputs.transport, flightsPerYear: 2, flightType }
+        });
+        expect(result.breakdown.transport).toBeGreaterThan(0);
+      }
+    );
+
+    it.each(['solar', 'wind', 'mixed'] as const)(
+      'calculates energy emissions for %s electricity source',
+      (electricitySource) => {
+        const result = calculateAnnualFootprint({
+          ...baseInputs,
+          energy: { ...baseInputs.energy, electricitySource }
+        });
+        expect(result.breakdown.energy).toBeGreaterThanOrEqual(0);
+      }
+    );
+
+    it('includes natural gas and coal usage in the energy total', () => {
+      const result = calculateAnnualFootprint({
+        ...baseInputs,
+        energy: { ...baseInputs.energy, naturalGasUnitsPerMonth: 10, coalUsageKgPerMonth: 5 }
+      });
+      const baseline = calculateAnnualFootprint(baseInputs);
+      expect(result.breakdown.energy).toBeGreaterThan(baseline.breakdown.energy);
+    });
+
+    it('caps percentile rank at 99 for extremely high footprints', () => {
+      const result = calculateAnnualFootprint({
+        ...baseInputs,
+        transport: { ...baseInputs.transport, carKmPerDay: 1000, flightsPerYear: 50, flightType: 'longHaul' },
+        energy: { ...baseInputs.energy, electricityKwhPerMonth: 50000 }
+      });
+      expect(result.percentileRank).toBe(99);
+    });
   });
 
   describe('calculateHotspots', () => {

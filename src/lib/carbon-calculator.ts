@@ -1,5 +1,5 @@
 /**
- * Carbon footprint calculation logic.
+ * @fileoverview Carbon footprint calculation and reduction simulation utilities.
  * All emission factors are sourced from IPCC AR6 and UK DEFRA 2023 guidelines.
  *
  * Units: kg CO₂e per year unless otherwise noted.
@@ -87,13 +87,21 @@ export function calculateCarbonFootprint(
   };
 }
  
+/** Result of a lifestyle carbon savings simulation. */
+export interface SimulationResult {
+  /** Estimated CO2 saved per year in kg */
+  savings: number;
+  /** Estimated percentage footprint reduction */
+  savingsPercent: number;
+}
+
 /**
  * Estimate percentage reduction if user switches to a given car type.
  */
 export function simulateCarSwitch(
   params: CarbonInputParams,
   newCarType: CarType
-): { savings: number; savingsPercent: number } {
+): SimulationResult {
   const current = calculateCarbonFootprint(params);
   const simulated = calculateCarbonFootprint({ ...params, carType: newCarType });
   const savings = current.total - simulated.total;
@@ -110,7 +118,7 @@ export function simulateCarSwitch(
 export function simulateDietChange(
   params: CarbonInputParams,
   newDiet: DietType
-): { savings: number; savingsPercent: number } {
+): SimulationResult {
   const current = calculateCarbonFootprint(params);
   const simulated = calculateCarbonFootprint({ ...params, diet: newDiet });
   const savings = current.total - simulated.total;
