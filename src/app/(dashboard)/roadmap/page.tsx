@@ -86,7 +86,7 @@ export default function RoadmapPage() {
   };
 
   const handleEnroll = async (id: string) => {
-    if (!user) return;
+    if (!user) {return;}
     setLoadingChallenge(id);
     try {
       await enroll(id, 7, 100);
@@ -98,7 +98,7 @@ export default function RoadmapPage() {
   };
 
   const handleComplete = async (id: string, currentDays: number) => {
-    if (!user) return;
+    if (!user) {return;}
     setLoadingChallenge(id);
     try {
       // Simulate completion progression

@@ -38,7 +38,7 @@ export default function CoachPage() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || !user) return;
+    if (!prompt.trim() || !user) {return;}
 
     setError(null);
     setLoading(true);
@@ -49,7 +49,7 @@ export default function CoachPage() {
     setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }]);
 
     try {
-      const res = await fetch('/api/coach', {
+      const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

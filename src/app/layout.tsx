@@ -1,45 +1,104 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+ 
+const inter = Inter({
   subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
 });
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-import type { Viewport } from 'next';
-
+ 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  userScalable: true
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#16a34a" },
+    { media: "(prefers-color-scheme: dark)", color: "#15803d" },
+  ],
 };
-
+ 
 export const metadata: Metadata = {
-  title: "EcoQuest | Carbon Footprint Tracker & Gamified Reduction Platform",
-  description: "Calculate, analyze, and reduce your carbon footprint with our gamified platform. Features interactive calculators, carbon hotspots, simulated savings, and AI coaching.",
-  keywords: "sustainability, carbon footprint, CO2 calculator, climate change, eco challenge, green commute",
-  authors: [{ name: "EcoQuest Team" }],
-  manifest: "/manifest.json"
+  title: {
+    template: "%s | EcoQuest",
+    default: "EcoQuest — Track & Reduce Your Carbon Footprint",
+  },
+  description:
+    "EcoQuest helps you understand, track, simulate, and reduce your carbon footprint through personalized insights, gamification, and AI-powered sustainability guidance.",
+  keywords: [
+    "carbon footprint",
+    "sustainability",
+    "climate change",
+    "eco tracker",
+    "green living",
+    "CO2 calculator",
+    "EcoQuest",
+  ],
+  authors: [{ name: "Kanishka Lodhi", url: "https://github.com/Kanishka780" }],
+  creator: "Kanishka Lodhi",
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    title: "EcoQuest — Track & Reduce Your Carbon Footprint",
+    description:
+      "Understand, track, simulate, and reduce your carbon footprint with AI-powered insights.",
+    siteName: "EcoQuest",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "EcoQuest — Track & Reduce Your Carbon Footprint",
+    description:
+      "Understand, track, simulate, and reduce your carbon footprint with AI-powered insights.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  manifest: "/manifest.json",
 };
-
-export default function RootLayout({
-  children,
-}: Readonly<{
+ 
+interface RootLayoutProps {
   children: React.ReactNode;
-}>) {
+}
+ 
+/**
+ * Root layout for EcoQuest.
+ * Includes skip navigation link, ARIA landmark structure, font variables, and service worker registration.
+ */
+export default function RootLayout({ children }: Readonly<RootLayoutProps>) {
   return (
-    <html lang="en" className="h-full">
-      <head>
-        <meta name="color-scheme" content="light dark" />
-      </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} h-full antialiased font-sans bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 transition-colors duration-200`}>
-        {children}
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen bg-background font-sans antialiased">
+        {/* Skip to main content — accessibility requirement */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-green-600 focus:px-4 focus:py-2 focus:text-white focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
+        >
+          Skip to main content
+        </a>
+ 
+        {/* Accessible landmark: banner (header navigation lives here via children) */}
+        <div id="app-root" role="none">
+          {children}
+        </div>
+ 
+        {/* Accessible live region for dynamic announcements */}
+        <div
+          id="aria-live-region"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        />
+ 
+        {/* Assertive region for critical alerts */}
+        <div
+          id="aria-alert-region"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          className="sr-only"
+        />
+
         {process.env.NODE_ENV === 'production' ? (
           <script dangerouslySetInnerHTML={{__html: `
             if ('serviceWorker' in navigator) {

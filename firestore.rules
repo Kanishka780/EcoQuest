@@ -25,9 +25,40 @@ service cloud.firestore {
       return data.inputs.transport.carKmPerDay is number
           && data.inputs.transport.carKmPerDay >= 0
           && data.inputs.transport.carKmPerDay <= 2000
+          && data.inputs.transport.carFuelType in ['petrol', 'diesel', 'electric', 'hybrid', 'none']
+          && data.inputs.transport.publicTransportKmPerDay is number
+          && data.inputs.transport.publicTransportKmPerDay >= 0
+          && data.inputs.transport.flightsPerYear is number
+          && data.inputs.transport.flightsPerYear >= 0
+          && data.inputs.transport.flightType in ['domestic', 'shortHaul', 'longHaul', 'mixed']
+          && data.inputs.transport.bikeOrWalkKmPerDay is number
+          && data.inputs.transport.bikeOrWalkKmPerDay >= 0
           && data.inputs.energy.electricityKwhPerMonth is number
           && data.inputs.energy.electricityKwhPerMonth >= 0
-          && data.inputs.energy.electricityKwhPerMonth <= 50000;
+          && data.inputs.energy.electricityKwhPerMonth <= 50000
+          && data.inputs.energy.electricitySource in ['grid', 'solar', 'wind', 'mixed']
+          && data.inputs.energy.naturalGasUnitsPerMonth is number
+          && data.inputs.energy.naturalGasUnitsPerMonth >= 0
+          && data.inputs.energy.coalUsageKgPerMonth is number
+          && data.inputs.energy.coalUsageKgPerMonth >= 0
+          && data.inputs.energy.householdSize is number
+          && data.inputs.energy.householdSize >= 1
+          && data.inputs.diet.meatMealsPerWeek is number
+          && data.inputs.diet.meatMealsPerWeek >= 0
+          && data.inputs.diet.beefMealsPerWeek is number
+          && data.inputs.diet.beefMealsPerWeek >= 0
+          && data.inputs.diet.beefMealsPerWeek <= data.inputs.diet.meatMealsPerWeek
+          && data.inputs.diet.dairyServingsPerDay is number
+          && data.inputs.diet.dairyServingsPerDay >= 0
+          && data.inputs.diet.foodWastePercent is number
+          && data.inputs.diet.foodWastePercent >= 0
+          && data.inputs.diet.foodWastePercent <= 100
+          && data.inputs.shopping.clothingItemsPerMonth is number
+          && data.inputs.shopping.clothingItemsPerMonth >= 0
+          && data.inputs.shopping.electronicsPerYear is number
+          && data.inputs.shopping.electronicsPerYear >= 0
+          && data.inputs.shopping.onlineOrdersPerWeek is number
+          && data.inputs.shopping.onlineOrdersPerWeek >= 0;
     }
     
     function isValidHabitLog(data) {

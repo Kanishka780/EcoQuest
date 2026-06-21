@@ -33,7 +33,7 @@ export default function CalculatorPage() {
 
   // Default values from activeRecord or defaults
   const defaultValues = useMemo<FootprintInputs>(() => {
-    if (activeRecord) return activeRecord.inputs;
+    if (activeRecord) {return activeRecord.inputs;}
     return {
       transport: {
         carKmPerDay: 15,
@@ -92,7 +92,7 @@ export default function CalculatorPage() {
 
   // Handle Form Submission / Database saving
   const onSubmit = async (data: FootprintInputs) => {
-    if (!user) return;
+    if (!user) {return;}
     setSaveLoading(true);
     setSuccessMsg('');
     try {

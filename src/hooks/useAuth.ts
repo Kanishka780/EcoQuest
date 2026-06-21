@@ -12,7 +12,7 @@ let _listenerStarted = false;
 let _unsubscribeDoc: (() => void) | null = null;
 
 function startAuthListener() {
-  if (_listenerStarted) return;
+  if (_listenerStarted) {return;}
   _listenerStarted = true;
 
   const { setUser, setLoading, initialize: initStore } = useUserStore.getState();
@@ -23,7 +23,7 @@ function startAuthListener() {
     (async () => {
       await initStore();
       const mockUser = useUserStore.getState().user;
-      if (mockUser) await initFootprints(mockUser.uid);
+      if (mockUser) {await initFootprints(mockUser.uid);}
     })();
     return;
   }
@@ -95,7 +95,7 @@ function startAuthListener() {
     _unsubscribeDoc = onSnapshot(
       userDocRef,
       (docSnap) => {
-        if (docSnap.exists()) setUser(docSnap.data() as UserProfile);
+        if (docSnap.exists()) {setUser(docSnap.data() as UserProfile);}
         setLoading(false);
       },
       (err) => {

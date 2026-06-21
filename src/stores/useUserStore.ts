@@ -146,7 +146,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   logHabit: async (date, habitInput) => {
     const { user, habits } = get();
-    if (!user) return;
+    if (!user) {return;}
 
     // Calculate carbon saved
     // factors: public transport = 0.5kg per trip, bike = 0.192kg per km, vegetarian meal = 0.65kg, plastic free = 0.2kg
@@ -169,7 +169,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
     // Calculate points and streak
     let pointsEarned = Math.round(carbonSaved * 10);
-    if (pointsEarned < 5) pointsEarned = 5; // minimum points for tracking
+    if (pointsEarned < 5) {pointsEarned = 5;} // minimum points for tracking
 
     let newStreak = user.sustainability.streak;
     const lastLogDate = user.sustainability.lastHabitLog;
@@ -233,7 +233,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   enrollInChallenge: async (challengeId, _durationDays, _points) => {
     const { user, challengeProgress } = get();
-    if (!user) return;
+    if (!user) {return;}
     void _durationDays;
     void _points;
 
@@ -271,10 +271,10 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   updateChallengeProgress: async (challengeId, daysCompleted, isCompleted = false) => {
     const { user, challengeProgress } = get();
-    if (!user) return;
+    if (!user) {return;}
 
     const current = challengeProgress[challengeId];
-    if (!current) return;
+    if (!current) {return;}
 
     const pointsToEarn = isCompleted ? 150 : 0; // Hardcoded default award for completion, can be dynamic
     
@@ -341,7 +341,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   updateProfileSettings: async (settings) => {
     const { user } = get();
-    if (!user) return;
+    if (!user) {return;}
 
     const updatedUser = {
       ...user,
@@ -373,7 +373,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   updateProfileInfo: async (info) => {
     const { user } = get();
-    if (!user) return;
+    if (!user) {return;}
 
     const updatedUser = {
       ...user,
@@ -403,7 +403,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   acceptPrivacyConsent: async () => {
     const { user } = get();
-    if (!user) return;
+    if (!user) {return;}
 
     const updatedUser = {
       ...user,

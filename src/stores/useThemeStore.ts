@@ -18,7 +18,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   },
 
   applyTheme: () => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {return;}
     
     const theme = get().theme;
     const root = window.document.documentElement;

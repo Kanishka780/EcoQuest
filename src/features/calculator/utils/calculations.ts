@@ -120,7 +120,7 @@ export function calculateAnnualFootprint(inputs: FootprintInputs): FootprintResu
   } else {
     // Above average: scale from 50 to 99
     percentile = 50 + ((annualTotal - natAvg) / (natAvg * 3)) * 49;
-    if (percentile > 99) percentile = 99;
+    if (percentile > 99) {percentile = 99;}
   }
 
   return {

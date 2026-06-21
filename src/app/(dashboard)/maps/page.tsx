@@ -39,7 +39,7 @@ export default function MapsPage() {
 
   // Determine user's highest hotspot to suggest transit or charger
   const hotspotSuggestion = useMemo(() => {
-    if (!activeRecord) return null;
+    if (!activeRecord) {return null;}
     const { breakdown } = activeRecord.results;
     const sorted = Object.entries(breakdown).sort(([, a], [, b]) => b - a);
     const topCategory = sorted[0][0];

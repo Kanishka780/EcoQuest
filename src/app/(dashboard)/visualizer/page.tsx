@@ -27,9 +27,9 @@ export default function VisualizerPage() {
 
   // Determine Earth atmosphere glow color
   const atmosphereGlow = useMemo(() => {
-    if (globalTempRise <= 1.5) return 'rgba(16, 185, 129, 0.45)'; // Emerald
-    if (globalTempRise <= 2.0) return 'rgba(234, 179, 8, 0.45)';   // Yellow
-    if (globalTempRise <= 3.0) return 'rgba(249, 115, 22, 0.5)';   // Orange
+    if (globalTempRise <= 1.5) {return 'rgba(16, 185, 129, 0.45)';} // Emerald
+    if (globalTempRise <= 2.0) {return 'rgba(234, 179, 8, 0.45)';}   // Yellow
+    if (globalTempRise <= 3.0) {return 'rgba(249, 115, 22, 0.5)';}   // Orange
     return 'rgba(239, 68, 68, 0.6)';                              // Red
   }, [globalTempRise]);
 
