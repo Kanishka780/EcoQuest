@@ -128,7 +128,15 @@ export async function POST(req: NextRequest) {
 
       // Add a slight delay to simulate network call latency for authenticity
       await new Promise((resolve) => setTimeout(resolve, 800));
-      return NextResponse.json(responseJson);
+      return NextResponse.json({
+        ...responseJson,
+        _meta: {
+          model: 'mock-fallback',
+          provider: 'EcoQuest internal',
+          dataSource: 'IPCC AR6 baseline estimates',
+          disclaimer: 'AI-generated guidance only. Not professional environmental advice.',
+        }
+      });
     }
 
     // 4. PRODUCTION MODE (Call real Gemini API)
@@ -188,7 +196,15 @@ export async function POST(req: NextRequest) {
     }
 
     const coachAdvice = JSON.parse(candidateText.trim());
-    return NextResponse.json(coachAdvice);
+    return NextResponse.json({
+      ...coachAdvice,
+      _meta: {
+        model: 'gemini-1.5-flash',
+        provider: 'Google Gemini',
+        dataSource: 'IPCC AR6 + Indian MoEFCC emission factors',
+        disclaimer: 'AI-generated guidance only. Not professional environmental advice.',
+      }
+    });
 
   } catch (error: unknown) {
     console.error('API Error in /api/coach:', error);

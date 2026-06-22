@@ -86,6 +86,17 @@ export default function DashboardHome() {
           <p className="text-sm text-zinc-500">
             Monitor your carbon tracker metrics, streaks, and active reduction roadmap.
           </p>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] font-bold text-blue-400 uppercase tracking-widest">
+              🌍 SDG 13 — Climate Action
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+              SDG 11 — Sustainable Cities
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-[10px] font-bold text-purple-400 uppercase tracking-widest">
+              SDG 12 — Responsible Consumption
+            </span>
+          </div>
         </div>
 
         <button
@@ -257,6 +268,37 @@ export default function DashboardHome() {
           </div>
         </div>
 
+      </div>
+
+      {/* Collective Impact Block */}
+      <div className="glass-card bg-emerald-950/20 border-emerald-800/40 p-6 md:p-8">
+        <div className="flex flex-col md:flex-row md:items-center gap-6">
+          <div className="flex-1 space-y-2">
+            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block">
+              🌱 Collective Impact — 1M1B AI for Sustainability
+            </span>
+            <h3 className="text-lg font-bold text-white">Your Actions Create Real Change</h3>
+            <p className="text-xs text-slate-400 leading-relaxed max-w-lg">
+              If 1,000 users reduce their carbon footprint by just 10% through habit changes,
+              that saves approximately <span className="text-emerald-400 font-semibold">500 tonnes of CO₂</span> annually —
+              equivalent to planting <span className="text-emerald-400 font-semibold">8,000 trees</span>.
+              EcoQuest aligns with SDG 13 (Climate Action) and IBM SkillsBuild&apos;s AI for Sustainability mission.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-3 min-w-[260px]">
+            {[
+              { label: 'CO₂ Avoided', value: '500T', sub: 'per 1K users/yr' },
+              { label: 'Tree Equivalent', value: '8,000', sub: 'trees planted' },
+              { label: 'SDG Target', value: '2030', sub: 'Paris Agreement' },
+            ].map((stat) => (
+              <div key={stat.label} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-center">
+                <div className="text-lg font-extrabold text-emerald-400 tabular-nums">{stat.value}</div>
+                <div className="text-[9px] text-slate-500 font-semibold uppercase mt-0.5">{stat.label}</div>
+                <div className="text-[9px] text-slate-600 mt-0.5">{stat.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

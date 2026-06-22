@@ -51,6 +51,7 @@ export function Navigation() {
     { name: 'Habits', path: '/habits', icon: CheckSquare },
     { name: 'Leaderboard', path: '/leaderboard', icon: Trophy },
     { name: 'Roadmap', path: '/roadmap', icon: Map },
+    { name: 'About', path: '/about', icon: Leaf },
   ];
 
   return (

@@ -14,6 +14,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { useUserStore } from '../../../stores/useUserStore';
 import { useFootprintStore } from '../../../stores/useFootprintStore';
 import { Send, Sparkles, AlertCircle, Award, Footprints, Zap, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 /** Difficulty level for an AI-recommended reduction action. */
 type Difficulty = 'easy' | 'medium' | 'hard';
@@ -164,6 +165,21 @@ export default function CoachPage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
+
+      {/* Responsible AI Disclosure — 1M1B Guideline Requirement */}
+      <div className="mb-4 p-4 bg-slate-900/60 border border-slate-700/50 rounded-xl flex items-start gap-3">
+        <ShieldCheck className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
+        <div className="space-y-0.5">
+          <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Responsible AI Disclosure</p>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            This coach is powered by Google Gemini AI and uses <strong className="text-slate-300">prompt engineering</strong> to generate personalized sustainability guidance.
+            Responses are AI-generated suggestions — not professional advice. All recommendations are based on
+            publicly available IPCC and Indian government emission data.
+            No personal data is shared with third parties. Your footprint data is stored securely in Firestore
+            under your user account only.
+          </p>
+        </div>
+      </div>
 
       {/* Page header */}
       <div>
