@@ -67,6 +67,29 @@ export default function AboutPage() {
         </p>
       </div>
 
+      {/* Problem Statement */}
+      <div className="glass-card bg-white dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800 p-6 space-y-3">
+        <h2 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-wider">Problem Statement</h2>
+        <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+          <p className="text-sm font-semibold text-blue-300 italic leading-relaxed">
+            &ldquo;How might we use AI to help individuals understand and reduce their personal carbon footprint
+            so that everyday lifestyle choices can become more climate-conscious and sustainable?&rdquo;
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+          {[
+            { q: 'What problem?', a: 'People emit carbon daily without knowing how much or which habits matter most.' },
+            { q: 'Who is affected?', a: 'Urban youth, students, working professionals in Indian Tier 1 & 2 cities.' },
+            { q: 'Why AI?', a: 'Only AI can personalize reduction plans at scale, predict impact, and adapt to user behavior.' },
+          ].map((item) => (
+            <div key={item.q} className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{item.q}</p>
+              <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-1 leading-relaxed">{item.a}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* SDG Alignment */}
       <div className="glass-card bg-white dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
         <h2 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-wider">SDG Alignment</h2>
@@ -106,6 +129,26 @@ export default function AboutPage() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* Role of AI */}
+      <div className="glass-card bg-white dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
+        <h2 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-wider">Role of AI in EcoQuest</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {[
+            { label: 'Prediction', desc: 'Future emission projections via Impact Simulator' },
+            { label: 'Decision Support', desc: 'Personalized reduction roadmap for each user' },
+            { label: 'Automation', desc: 'Habit tracking, streak calculation, report generation' },
+            { label: 'Conversational AI', desc: 'Gemini-powered chat coach with prompt engineering' },
+            { label: 'Pattern Detection', desc: 'Carbon Hotspot Analysis identifies highest-impact areas' },
+            { label: 'Summarization', desc: 'Sustainability Report Generator condenses user data into insights' },
+          ].map((item) => (
+            <div key={item.label} className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">{item.label}</p>
+              <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">{item.desc}</p>
+            </div>
+          ))}
         </div>
       </div>
 
